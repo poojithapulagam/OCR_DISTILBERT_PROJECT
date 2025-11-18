@@ -7,8 +7,7 @@ def extract_entities(texts):
     start_time = time.time()
     results = []
 
-    # Load pretrained NER model
-    model_name = "dslim/bert-base-NER"
+    model_name = "dbmdz/bert-large-cased-finetuned-conll03-english"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForTokenClassification.from_pretrained(model_name)
     nlp = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
@@ -18,44 +17,27 @@ def extract_entities(texts):
         cleaned_text = text.strip()
 
         entities = nlp(cleaned_text)
-        name = None
-        address = None
-        tracking_number = None
 
-        # Combine multi-token names correctly (e.g., John Smith)
-        person_tokens = [ent['word'] for ent in entities if ent['entity_group'] == 'PER']
-        if person_tokens:
-            name = " ".join(person_tokens).title()
+        # Improved Name extraction
+        names = [ent['word'] for ent in entities if ent['entity_group'] == 'PER']
+        name = ", ".join(names).title() if names else None
 
-        # Extract tracking numbers (UPS, FedEx, Amazon, USPS)
+
+        # Improved Tracking number extraction
         tracking_match = re.search(
-            r'\b(?:1Z[0-9A-Z]{8,20}|TBA[0-9A-Z]{8,20}|9[0-9]{15,22})\b',
+            r'\b(?:1Z(?:[\s-]?[0-9A-Z]){8,20}|TBA(?:[\s-]?[0-9A-Z]){8,20}|9(?:[\s-]?[0-9]){15,22})\b',
             cleaned_text,
             re.IGNORECASE
         )
-        if tracking_match:
-            tracking_number = tracking_match.group(0).upper()
+        tracking_number = re.sub(r'[\s-]', '', tracking_match.group(0)).upper() if tracking_match else None
 
-        # Extract address
-        if "ship to" in cleaned_text.lower():
-            after_ship = re.split(r"ship to", cleaned_text, flags=re.IGNORECASE)[-1]
-            addr_match = re.search(
-                r'([0-9]+\s+[a-zA-Z0-9\s,.]+,\s*[A-Za-z\s]+,\s*[A-Za-z]{2,}\s*\d{4,6})',
-                after_ship
-            )
-            if addr_match:
-                address = addr_match.group(1).strip().title()
-            else:
-                address = re.search(r'([0-9]+\s+[a-zA-Z0-9\s,.]+[A-Za-z\s]+)', after_ship)
-                if address:
-                    address = address.group(1).strip().title()
-        else:
-            addr_match = re.search(
-                r'(\d{1,5}\s+[A-Za-z0-9\s,.]+,\s*[A-Za-z\s]+,\s*[A-Z]{2,}\s*\d{4,6})',
-                cleaned_text
-            )
-            if addr_match:
-                address = addr_match.group(1).strip().title()
+        # Improved Address extraction
+        address_match = re.search(
+            r'(\d{1,5}\s+[\w\s,.]+?,\s*[\w\s]+?,\s*[A-Za-z]{2,}\s*\d{5}(?:-\d{4})?)',
+            cleaned_text,
+            re.IGNORECASE
+        )
+        address = address_match.group(1).strip().title() if address_match else None
 
         clean_end = time.time()
         results.append({
